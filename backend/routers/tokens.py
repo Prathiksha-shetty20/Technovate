@@ -345,3 +345,24 @@ def complete_token(
         "break_remaining": remaining_customers,
         "counter_on_break": counter_state == "on_break",
     }
+# Get completed visits for the signed-in customer
+@router.get("/tokens/mine/completed")
+def get_customer_history(user=Depends(current_user)):
+    if user["role"] != "customer":
+        raise HTTPException(
+            status_code=403,
+            detail="Customer access required",
+        )
+
+    with connect_db() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, token, service, status, created_at, completed_at, counter_name
+            FROM tokens
+            WHERE user_id = ? AND status = 'completed'
+            ORDER BY completed_at DESC, id DESC
+            """,
+            (user["id"],),
+        ).fetchall()
+
+    return [dict(row) for row in rows]

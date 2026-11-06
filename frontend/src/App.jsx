@@ -44,6 +44,7 @@ export default function App() {
       return savedEmail ? JSON.parse(localStorage.getItem(`queuepulse-customer-tokens:${savedEmail}`) || "[]") : [];
     } catch { return []; }
   });
+  const [customerHistory, setCustomerHistory] = useState([]);
   const [staffQueue, setStaffQueue] = useState([]);
   const [completedHistory, setCompletedHistory] = useState([]);
   const [serviceCounters, setServiceCounters] = useState(null);
@@ -113,6 +114,43 @@ export default function App() {
     const timer = setInterval(refreshCustomerTokens, 3000);
     return () => clearInterval(timer);
   }, [auth, customerTokenIdsKey]);
+  useEffect(() => {
+    if (!auth || auth.user.role !== "customer") {
+      setCustomerHistory([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadCustomerHistory() {
+      try {
+        const response = await fetch(`${API}/tokens/mine/completed`, {
+          headers: { Authorization: `Bearer ${auth.token}` },
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || "Could not load visit history");
+        }
+
+        if (isMounted) {
+          setCustomerHistory(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err.message || "Could not load visit history.");
+        }
+      }
+    }
+
+    loadCustomerHistory();
+    const timer = setInterval(loadCustomerHistory, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [auth]);
 
   async function loadOverview() {
     try {
@@ -243,6 +281,7 @@ export default function App() {
     setSelectedService("");
     setActiveTab("work");
     setCustomerTokens([]);
+    setCustomerHistory([]);
     setStaffQueue([]);
     setCompletedHistory([]);
     setOverview([]);
@@ -389,8 +428,7 @@ export default function App() {
             <div style={STYLES.welcomeCopy}>
               <div style={STYLES.welcomeEyebrow}><span style={STYLES.liveDot} /> SMARTER SERVICE STARTS HERE</div>
               <h1 style={STYLES.welcomeTitle}>Your time matters.<br /><span>Waiting shouldn’t.</span></h1>
-              <p style={STYLES.welcomeDescription}>Join the right queue, follow your place in real time, and make every visit feel simpler.</p>
-              <button style={STYLES.welcomeCta} onClick={() => setHasStarted(true)}>
+                      <button style={STYLES.welcomeCta} onClick={() => setHasStarted(true)}>
                 Get started <span>→</span>
               </button>
               <div style={STYLES.welcomePerks}>
@@ -728,50 +766,170 @@ export default function App() {
     <Page>
       <Header user={auth.user} onSignOut={signOut} />
       <section className="qp-customer-layout" style={STYLES.customerWrap}>
-        <div className="qp-customer-story" style={STYLES.customerStory}>
-          <div style={STYLES.eyebrow}>YOUR VISIT, IN CONTROL</div>
-          <h1 style={STYLES.customerTitle}>Welcome,<br /><span>{auth.user.name.split(" ")[0]}.</span></h1>
-          <p style={STYLES.muted}>Choose a service, take your place, and keep track of every visit from one screen.</p>
-          <div style={STYLES.queueIllustration} aria-hidden="true"><div style={STYLES.queueLine} /><span style={STYLES.queueNodeActive}>01</span><span style={STYLES.queueNode}>02</span><span style={STYLES.queueNode}>03</span><div style={STYLES.queueIllustrationLabels}><small>JOIN</small><small>TRACK</small><small>SERVED</small></div></div>
-          <div style={STYLES.customerSafety}><span style={STYLES.safetyIcon}>✓</span><span style={{ display: "grid", gap: 3 }}><strong style={{ color: "#34445e", fontSize: 11 }}>Live queue updates</strong><small style={{ color: "#71819a", fontSize: 10 }}>Your token status refreshes automatically.</small></span></div>
+        <div className="qp-customer-story" style={{ ...STYLES.customerStory, gridColumn: "1 / -1", padding: "8px 0 4px" }}>
+          <div style={STYLES.eyebrow}>YOUR QUEUE DASHBOARD</div>
+          <h1 style={{ ...STYLES.customerTitle, margin: "9px 0" }}>
+            Welcome back, <span style={{ color: "#2853bd" }}>{auth.user.name.split(" ")[0]}.</span>
+          </h1>
+          <p style={STYLES.muted}>Join a service, follow active tokens, and review your completed visits in one place.</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 14 }}>
+            <span style={STYLES.samplePill}>{activeCustomerTokens.length} active tokens</span>
+            <span style={STYLES.samplePill}>{customerHistory.length} completed visits</span>
+          </div>
         </div>
 
         <section style={STYLES.card}>
-          <div style={STYLES.customerCardHeading}><div style={STYLES.sectionEyebrow}>START A VISIT</div><h2 style={STYLES.sectionTitle}>Choose a service</h2><p style={STYLES.sectionHint}>One active token per service area.</p></div>
+          <div style={STYLES.customerCardHeading}>
+            <div style={STYLES.sectionEyebrow}>START A VISIT</div>
+            <h2 style={STYLES.sectionTitle}>Choose a service</h2>
+            <p style={STYLES.sectionHint}>You can hold one active token for each service area.</p>
+          </div>
           <form onSubmit={joinQueue}>
             <div style={STYLES.serviceOptions}>
               {AREAS.map((area) => {
                 const existingToken = activeCustomerTokens.find((token) => token.service === area.apiName);
-                return <button type="button" key={area.apiName} onClick={() => { setCustomerService(area.apiName); setError(""); }} style={{ ...STYLES.serviceOption, ...(customerService === area.apiName ? STYLES.serviceOptionSelected : {}), ...(existingToken ? STYLES.serviceOptionHasToken : {}) }}>
-                  <span style={{ ...STYLES.roleIcon, color: area.color }}>{area.icon}</span>
-                  <span style={STYLES.serviceOptionText}><strong>{area.title}</strong><small>{existingToken ? `Token ${existingToken.token} · ${existingToken.status}` : area.detail}</small></span>
-                  <span style={STYLES.serviceOptionCheck}>{existingToken ? "ACTIVE" : customerService === area.apiName ? "✓" : ""}</span>
-                </button>;
+                return (
+                  <button
+                    type="button"
+                    key={area.apiName}
+                    onClick={() => { setCustomerService(area.apiName); setError(""); }}
+                    style={{
+                      ...STYLES.serviceOption,
+                      ...(customerService === area.apiName ? STYLES.serviceOptionSelected : {}),
+                      ...(existingToken ? STYLES.serviceOptionHasToken : {}),
+                    }}
+                  >
+                    <span style={{ ...STYLES.roleIcon, color: area.color }}>{area.icon}</span>
+                    <span style={STYLES.serviceOptionText}>
+                      <strong>{area.title}</strong>
+                      <small>{existingToken ? `Token ${existingToken.token} · ${existingToken.status}` : area.detail}</small>
+                    </span>
+                    <span style={STYLES.serviceOptionCheck}>
+                      {existingToken ? "ACTIVE" : customerService === area.apiName ? "SELECTED" : ""}
+                    </span>
+                  </button>
+                );
               })}
             </div>
-            <button style={{ ...STYLES.primary, ...(selectedServiceToken ? STYLES.buttonDisabled : {}) }} disabled={busy || Boolean(selectedServiceToken)}>{busy ? "Creating token…" : selectedServiceToken ? `${selectedServiceToken.token} is active` : "Get my token"} <span>→</span></button>
+            <button
+              style={{ ...STYLES.primary, ...(selectedServiceToken ? STYLES.buttonDisabled : {}) }}
+              disabled={busy || Boolean(selectedServiceToken)}
+            >
+              {busy ? "Creating token…" : selectedServiceToken ? `${selectedServiceToken.token} is active` : "Get my token"}
+              <span>→</span>
+            </button>
           </form>
           {error && <p style={STYLES.error}>{error}</p>}
         </section>
 
         <section className="qp-customer-tokens" style={STYLES.customerTokenPanel}>
-          <div style={STYLES.customerTokenHeading}><div><div style={STYLES.sectionEyebrow}>LIVE UPDATES</div><h2 style={STYLES.sectionTitle}>Your queue tokens</h2></div><span style={STYLES.samplePill}>{activeCustomerTokens.length} active</span></div>
-          {customerTokens.length === 0 ? <div style={STYLES.customerTokenEmpty}><span style={STYLES.emptyTokenIcon}>Q</span><strong>Your tokens will appear here</strong><small>Choose a service and get a token to start tracking your place.</small></div> : <div style={STYLES.customerTokenList}>
-            {AREAS.map((area) => {
-              const token = customerTokens.find((item) => item.service === area.apiName);
-              if (!token) return null;
-              const status = String(token.status || "waiting").toLowerCase();
-              const isComplete = status === "completed";
-              return <article key={area.apiName} style={{ ...STYLES.customerTokenCard, borderLeft: `4px solid ${area.color}` }}>
-                <div style={STYLES.customerTokenCardTop}><span style={{ ...STYLES.customerTokenService, color: area.color }}>{area.title}</span><span style={{ ...STYLES.customerTokenStatus, ...(status === "called" || status === "in_service" ? STYLES.tokenCalled : {}), ...(isComplete ? STYLES.tokenCompleted : {}) }}>{status === "called" ? "CALLED" : status === "in_service" ? "IN SERVICE" : status.toUpperCase()}</span></div>
-                <strong style={STYLES.customerTokenNumber}>{token.token}</strong>
-                <div style={STYLES.customerTokenMetrics}><span style={{ display: "grid", gap: 3 }}><small>People ahead</small><b>{token.people_ahead ?? 0}</b></span><span style={{ display: "grid", gap: 3 }}><small>Estimated wait</small><b>{status === "waiting" && token.working_counters === 0 ? "Service paused" : status === "waiting" && Number(token.people_ahead) === 0 ? "You’re next" : `${token.estimated_wait_minutes ?? 0} min`}</b></span></div>
-                {token.counter_name && <div style={STYLES.counterCallout}>Please go to <strong>{token.counter_name}</strong></div>}
-                {token.service_notice && <div style={STYLES.customerBreakNotice}>{token.service_notice}</div>}
-              </article>;
-            })}
-          </div>}
-          <p style={STYLES.note}>Statuses and estimated waits update automatically.</p>
+          <div style={STYLES.customerTokenHeading}>
+            <div>
+              <div style={STYLES.sectionEyebrow}>LIVE UPDATES</div>
+              <h2 style={STYLES.sectionTitle}>Active tokens</h2>
+            </div>
+            <span style={STYLES.samplePill}>{activeCustomerTokens.length} active</span>
+          </div>
+          {activeCustomerTokens.length === 0 ? (
+            <div style={STYLES.customerTokenEmpty}>
+              <span style={STYLES.emptyTokenIcon}>Q</span>
+              <strong>No active tokens</strong>
+              <small>Choose a service to join a queue and track your place here.</small>
+            </div>
+          ) : (
+            <div style={STYLES.customerTokenList}>
+              {activeCustomerTokens.map((token) => {
+                const area = AREAS.find((item) => item.apiName === token.service) || AREAS[0];
+                const status = String(token.status || "waiting").toLowerCase();
+                return (
+                  <article
+                    key={token.id ?? token.token}
+                    style={{ ...STYLES.customerTokenCard, borderLeft: `4px solid ${area.color}` }}
+                  >
+                    <div style={STYLES.customerTokenCardTop}>
+                      <span style={{ ...STYLES.customerTokenService, color: area.color }}>{area.title}</span>
+                      <span style={{
+                        ...STYLES.customerTokenStatus,
+                        ...(status === "called" || status === "in_service" ? STYLES.tokenCalled : {}),
+                      }}>
+                        {status === "called" ? "CALLED" : status === "in_service" ? "IN SERVICE" : status.toUpperCase()}
+                      </span>
+                    </div>
+                    <strong style={STYLES.customerTokenNumber}>{token.token}</strong>
+                    <div style={STYLES.customerTokenMetrics}>
+                      <span style={{ display: "grid", gap: 3 }}>
+                        <small>People ahead</small>
+                        <b>{token.people_ahead ?? 0}</b>
+                      </span>
+                      <span style={{ display: "grid", gap: 3 }}>
+                        <small>Estimated wait</small>
+                        <b>
+                          {status === "waiting" && token.working_counters === 0
+                            ? "Service paused"
+                            : status === "waiting" && Number(token.people_ahead) === 0
+                              ? "You’re next"
+                              : `${token.estimated_wait_minutes ?? 0} min`}
+                        </b>
+                      </span>
+                    </div>
+                    {token.counter_name && <div style={STYLES.counterCallout}>Please go to <strong>{token.counter_name}</strong></div>}
+                    {token.service_notice && <div style={STYLES.customerBreakNotice}>{token.service_notice}</div>}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+          <p style={STYLES.note}>Token status and wait estimates refresh automatically.</p>
+        </section>
+
+        <section className="qp-customer-history" style={{ ...STYLES.customerTokenPanel, gridColumn: "1 / -1" }}>
+          <div style={STYLES.customerTokenHeading}>
+            <div>
+              <div style={STYLES.sectionEyebrow}>PAST VISITS</div>
+              <h2 style={STYLES.sectionTitle}>Visit history</h2>
+            </div>
+            <span style={STYLES.samplePill}>{customerHistory.length} completed</span>
+          </div>
+          {customerHistory.length === 0 ? (
+            <div style={STYLES.customerTokenEmpty}>
+              <strong>No completed visits yet</strong>
+              <small>Your completed tokens will appear here.</small>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10 }}>
+              {customerHistory.map((visit) => {
+                const area = AREAS.find((item) => item.apiName === visit.service);
+                return (
+                  <article
+                    key={visit.id}
+                    style={{
+                      ...STYLES.customerTokenCard,
+                      borderLeft: `4px solid ${area?.color || "#2853bd"}`,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <strong style={{ ...STYLES.customerTokenService, color: area?.color || "#2853bd" }}>
+                        {area?.title || visit.service}
+                      </strong>
+                      <strong style={{ display: "block", marginTop: 7, color: "#1c2d4a", fontSize: 20 }}>
+                        {visit.token}
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={STYLES.tokenCompleted}>COMPLETED</span>
+                      <small style={{ display: "block", marginTop: 7, color: "#667791" }}>
+                        {formatTimestamp(visit.completed_at)}
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       </section>
       <Footer />
@@ -1364,8 +1522,65 @@ const STYLES = {
   note: { display: "block", marginTop: 9, color: "#7b8798", fontSize: 10 },
   footer: {width: "min(100%, 1240px)", minHeight: 54, margin: "auto", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, borderTop: "1px solid #dfe6f1", color: "#77859a", fontSize: 9, fontWeight: 850, letterSpacing: 1.1},
 };
-
-
-
+Object.assign(STYLES, {
+  page: {
+    ...STYLES.page,
+    background: "linear-gradient(145deg, #f5f7fb 0%, #edf2f8 100%)",
+    color: "#18263b",
+  },
+  welcomeVisual: {
+    ...STYLES.welcomeVisual,
+    background: "linear-gradient(115deg, #10233f 0%, #183b68 58%, #246276 100%)",
+    boxShadow: "0 28px 70px rgba(16, 35, 63, 0.18)",
+  },
+  authAside: {
+    ...STYLES.authAside,
+    background: "linear-gradient(145deg, #10233f 0%, #183b68 65%, #246276 100%)",
+  },
+  card: {
+    ...STYLES.card,
+    background: "#ffffff",
+    border: "1px solid #dce4ee",
+    boxShadow: "0 18px 46px rgba(24, 38, 59, 0.08)",
+  },
+  primary: {
+    ...STYLES.primary,
+    background: "linear-gradient(110deg, #2858c8, #2149a5)",
+    boxShadow: "0 9px 20px rgba(40, 88, 200, 0.2)",
+  },
+  customerWrap: {
+    ...STYLES.customerWrap,
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+    gap: 22,
+    alignItems: "start",
+  },
+  customerTitle: {
+    ...STYLES.customerTitle,
+    color: "#18263b",
+  },
+  customerTokenPanel: {
+    ...STYLES.customerTokenPanel,
+    border: "1px solid #dce4ee",
+    background: "#ffffff",
+    boxShadow: "0 14px 32px rgba(24, 38, 59, 0.06)",
+  },
+  customerTokenCard: {
+    ...STYLES.customerTokenCard,
+    background: "#ffffff",
+    borderTop: "1px solid #e0e7f0",
+    borderRight: "1px solid #e0e7f0",
+    borderBottom: "1px solid #e0e7f0",
+  },
+  customerTokenNumber: {
+    ...STYLES.customerTokenNumber,
+    color: "#234fae",
+  },
+  serviceOptionSelected: {
+    ...STYLES.serviceOptionSelected,
+    borderColor: "#4b70ce",
+    background: "#f0f4fc",
+    boxShadow: "0 0 0 2px rgba(75, 112, 206, 0.1)",
+  },
+});
 
 
