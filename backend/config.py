@@ -4,9 +4,9 @@ from datetime import timezone, timedelta
 
 # Counter capacity for each service
 COUNTER_CAPACITY = {
-    "General": 3,
-    "Account Services": 4,
-    "Customer Support": 5,
+    "General": 1,
+    "Account Services": 2,
+    "Customer Support": 2,
 }
 
 
