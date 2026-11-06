@@ -11,7 +11,7 @@ from utils.helpers import (
     active_counter_names,
     break_states_for_service,
 )
-
+from config import COUNTER_CAPACITY
 
 router = APIRouter()
 
@@ -64,11 +64,7 @@ def get_all_counters(user=Depends(require_staff)):
 
     with connect_db() as connection:
 
-        for service, capacity in {
-            "General": 3,
-            "Account Services": 4,
-            "Customer Support": 5,
-        }.items():
+        for service, capacity in COUNTER_CAPACITY.items():
 
             busy = active_counter_names(connection, service)
 
