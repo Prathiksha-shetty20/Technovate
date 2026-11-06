@@ -94,11 +94,17 @@ def initialize_database():
         }
 
         # Add missing token columns
-        for column in ("called_at", "completed_at", "counter_name"):
+    
+        for column in ("user_id", "called_at", "completed_at", "counter_name"):
             if column not in token_columns:
-                connection.execute(
-                    f"ALTER TABLE tokens ADD COLUMN {column} TEXT"
+                if column == "user_id":
+                    connection.execute(
+                        "ALTER TABLE tokens ADD COLUMN user_id INTEGER REFERENCES users(id)"
                 )
+                else:
+                    connection.execute(
+                        f"ALTER TABLE tokens ADD COLUMN {column} TEXT"
+            )
 
         # Reset staff service and counter assignments
         connection.execute(

@@ -609,7 +609,6 @@ export default function App() {
             <div>
               <div style={STYLES.eyebrow}>STAFF WORKSPACE</div>
               <h1 style={STYLES.title}>Choose a service</h1>
-              <p style={STYLES.muted}>Open a service to manage its live queue, counters, and history.</p>
             </div>
             <button style={STYLES.secondary} onClick={loadOverview}>↻ Refresh</button>
           </div>
@@ -771,10 +770,9 @@ export default function App() {
           <h1 style={{ ...STYLES.customerTitle, margin: "9px 0" }}>
             Welcome back, <span style={{ color: "#2853bd" }}>{auth.user.name.split(" ")[0]}.</span>
           </h1>
-          <p style={STYLES.muted}>Join a service, follow active tokens, and review your completed visits in one place.</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 9, marginTop: 14 }}>
-            <span style={STYLES.samplePill}>{activeCustomerTokens.length} active tokens</span>
-            <span style={STYLES.samplePill}>{customerHistory.length} completed visits</span>
+            <span style={{ ...STYLES.samplePill, padding: "9px 13px", fontSize: 12 }}>{activeCustomerTokens.length} active tokens</span>
+            <span style={{ ...STYLES.samplePill, padding: "9px 13px", fontSize: 12 }}>{customerHistory.length} completed visits</span>
           </div>
         </div>
 
@@ -942,9 +940,7 @@ function MyWorkView({ area, queue, counters, waiting, inService, freeCounters, c
     <div>
       <div style={STYLES.panelHeading}>
         <div>
-          <div style={STYLES.sectionEyebrow}>LIVE OPERATIONS</div>
           <h2 style={STYLES.panelTitle}>My Work</h2>
-          <p style={STYLES.sectionHint}>Only waiting and in-service customers appear here.</p>
         </div>
         <span style={STYLES.livePill}><i style={STYLES.liveDot} /> LIVE</span>
       </div>
@@ -960,7 +956,6 @@ function MyWorkView({ area, queue, counters, waiting, inService, freeCounters, c
         <div style={STYLES.innerCardHeader}>
           <div>
             <h3 style={STYLES.innerTitle}>{area?.title} counter schedule</h3>
-            <p style={STYLES.sectionHint}>Green counters are free; amber counters are serving a customer.</p>
           </div>
           <button
             style={{ ...STYLES.actionButton, ...(!canCallNext ? STYLES.buttonDisabled : {}) }}
@@ -992,7 +987,7 @@ function MyWorkView({ area, queue, counters, waiting, inService, freeCounters, c
                   <strong>{counter.name}</strong>
                   <span>{counter.break_state === "on_break" ? "ON BREAK" : counter.break_state === "break_pending" ? "BREAK SOON" : counter.status === "busy" ? "BUSY" : "FREE"}</span>
                 </div>
-                <small>{active ? `Serving ${active.token} · ${active.name}` : counter.break_state === "on_break" ? "Paused; not taking customers" : counter.break_state === "break_pending" ? `${counter.break_remaining ?? 2} more customers before break` : "Ready for next customer"}</small>
+                {active && <small>Serving {active.token} · {active.name}</small>}
                 <button
                   type="button"
                   style={STYLES.breakButton}
@@ -1038,7 +1033,7 @@ function MyWorkView({ area, queue, counters, waiting, inService, freeCounters, c
                     <td>
                       {item.status === "called"
                         ? <button style={STYLES.completeButton} onClick={() => onComplete(item.id, item.token)} disabled={actionBusy}>Complete</button>
-                        : <span style={STYLES.nextHint}>{item.id === waiting[0]?.id ? "NEXT IN LINE" : "IN QUEUE"}</span>}
+                        : <span />}
                     </td>
                   </tr>
                 ))}
@@ -1053,12 +1048,15 @@ function MyWorkView({ area, queue, counters, waiting, inService, freeCounters, c
 
 function BusynessView({ area, analytics, insight, capacity, extraCounters, setExtraCounters }) {
   const chartData = analytics?.hourly_volume || [];
+  const waitingCount = insight?.waiting ?? 0;
+  const inServiceCount = insight?.in_service ?? 0;
+  const serviceMinutes = analytics?.average_service_minutes || 6;
+  const currentEstimate = analytics?.estimated_current_queue_minutes ?? insight?.estimated_queue_minutes ?? 0;
   const projected = extraCounters === 0
-    ? insight?.estimated_queue_minutes ?? 0
-    : Math.ceil(
-        ((insight?.waiting ?? 0) + (insight?.in_service ?? 0)) /
-        (capacity + extraCounters)
-      ) * (insight?.average_service_minutes || 6);
+    ? currentEstimate
+    : Math.ceil((waitingCount + inServiceCount) / Math.max(1, capacity + extraCounters)) * serviceMinutes;
+  const mlStatus = analytics?.ml_training_status;
+  const isMLActive = analytics?.prediction_source === 'random_forest';
 
   return (
     <div>
@@ -1075,8 +1073,44 @@ function BusynessView({ area, analytics, insight, capacity, extraCounters, setEx
         <Metric label="Peak arrival time" value={analytics?.peak_hour || "Building history"} />
         <Metric label="Average wait" value={analytics?.average_wait_minutes != null ? `${analytics.average_wait_minutes} min` : "Collecting data"} />
         <Metric label="Service time" value={analytics?.average_service_minutes != null ? `${analytics.average_service_minutes} min` : "Collecting data"} />
-        <Metric label="Current queue estimate" value={`${analytics?.estimated_current_queue_minutes ?? 0} min`} />
+        <Metric label="Current queue estimate" value={`${currentEstimate} min`} />
       </div>
+
+      <section style={{ ...STYLES.innerCard, border: "1px solid #dce5f5", background: "#f8faff" }}>
+        <div style={STYLES.innerCardHeader}>
+          <div>
+            <h3 style={STYLES.innerTitle}>Smart wait-time prediction</h3>
+          </div>
+          <span style={{ padding: "7px 11px", borderRadius: 20, fontSize: 11, fontWeight: 800, color: isMLActive ? "#08744f" : "#8a611b", background: isMLActive ? "#e4f6ed" : "#fff3d9" }}>
+            {isMLActive ? "ML ACTIVE" : "FORMULA ACTIVE"}
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginTop: 16 }}>
+          <div style={{ padding: 16, borderRadius: 12, background: "#fff", border: "1px solid #e3e9f3" }}>
+            <small style={{ color: "#71819a", fontWeight: 700 }}>WAIT-TIME PREDICTION</small>
+            <strong style={{ display: "block", marginTop: 8, fontSize: 30, color: "#2449a8" }}>
+              {isMLActive ? `${analytics?.predicted_wait_minutes ?? currentEstimate} min` : `${currentEstimate} min`}
+            </strong>
+            <small style={{ color: "#71819a" }}>{isMLActive ? "Random Forest prediction" : "Existing formula estimate"}</small>
+          </div>
+          <div style={{ padding: 16, borderRadius: 12, background: "#fff", border: "1px solid #e3e9f3" }}>
+            <small style={{ color: "#71819a", fontWeight: 700 }}>REAL TRAINING RECORDS</small>
+            <strong style={{ display: "block", marginTop: 8, fontSize: 30, color: "#2449a8" }}>{mlStatus?.records ?? 0}</strong>
+            <small style={{ color: "#71819a" }}>Minimum required: 30</small>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 15, padding: 13, borderRadius: 9, background: "#fff", border: "1px solid #e3e9f3", color: "#53647c", fontSize: 12, lineHeight: 1.7 }}>
+          <strong style={{ color: "#233854" }}>Model status</strong>
+          <p style={{ margin: "5px 0 0" }}>
+            {isMLActive
+              ? "The Random Forest model is active and generating wait-time predictions."
+              : mlStatus?.message || "The ML model is not active yet. The dashboard is using the existing formula-based estimate."}
+          </p>
+          <p style={{ margin: "5px 0 0" }}>Prediction method: <strong>{isMLActive ? "Random Forest ML" : "Formula-based fallback"}</strong></p>
+        </div>
+      </section>
 
       <section style={STYLES.innerCard}>
         <div style={STYLES.innerCardHeader}>
@@ -1087,16 +1121,13 @@ function BusynessView({ area, analytics, insight, capacity, extraCounters, setEx
           {analytics?.peak_hour && <span style={STYLES.peakPill}>Peak · {analytics.peak_hour}</span>}
         </div>
         <HourlyChart data={chartData} color={area?.color || "#3566d4"} />
-        {(analytics?.sample_visits ?? 0) < 10 && (
-          <p style={STYLES.dataNote}>Peak-hour insight is preliminary until more visits are recorded.</p>
-        )}
+        {(analytics?.sample_visits ?? 0) < 10 && <p style={STYLES.dataNote}>Peak-hour insight is preliminary until more visits are recorded.</p>}
       </section>
 
       <section style={STYLES.innerCard}>
         <div style={STYLES.innerCardHeader}>
           <div>
             <h3 style={STYLES.innerTitle}>Efficiency recommendations</h3>
-            <p style={STYLES.sectionHint}>Suggestions based on current and recorded service data.</p>
           </div>
         </div>
         {(analytics?.recommendations || []).map((item, index) => (
@@ -1114,26 +1145,16 @@ function BusynessView({ area, analytics, insight, capacity, extraCounters, setEx
       </section>
 
       <details style={STYLES.innerCard}>
-        <summary style={STYLES.detailsSummary}>What-if counter simulation</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 800, color: "#233854" }}>What-if counter simulation</summary>
         <p style={STYLES.sectionHint}>Projection only; it does not change the actual counter limit.</p>
-        <div style={STYLES.sliderLine}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
           <label htmlFor="extra-counters">Extra counters to simulate</label>
           <strong>{extraCounters}</strong>
         </div>
-        <input
-          id="extra-counters"
-          type="range"
-          min="0"
-          max="4"
-          value={extraCounters}
-          onChange={(event) => setExtraCounters(Number(event.target.value))}
-          style={STYLES.slider}
-        />
-        <div style={STYLES.simulationCompare}>
-          <span>Current estimate</span>
-          <strong>{insight?.estimated_queue_minutes ?? 0} min</strong>
-          <span>Projected with extra counters</span>
-          <strong>{projected} min</strong>
+        <input id="extra-counters" type="range" min="0" max="4" value={extraCounters} onChange={(event) => setExtraCounters(Number(event.target.value))} style={{ width: "100%", margin: "12px 0" }} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><span style={STYLES.sectionHint}>Current estimate</span><strong style={{ display: "block" }}>{currentEstimate} min</strong></div>
+          <div><span style={STYLES.sectionHint}>Projected estimate</span><strong style={{ display: "block" }}>{projected} min</strong></div>
         </div>
       </details>
     </div>
@@ -1147,7 +1168,6 @@ function HistoryView({ records }) {
         <div>
           <div style={STYLES.sectionEyebrow}>PERSISTENT SERVICE RECORDS</div>
           <h2 style={STYLES.panelTitle}>Completed History</h2>
-          <p style={STYLES.sectionHint}>Completed tokens leave My Work and stay recorded here.</p>
         </div>
         <span style={STYLES.samplePill}>{records.length} completed</span>
       </div>
@@ -1348,12 +1368,7 @@ function Header({ user, onSignOut }) {
 }
 
 function Footer() {
-  return (
-    <footer style={STYLES.footer}>
-      QUEUEPULSE · SMARTER SERVICE, LESS WAITING
-      <span>HACKATHON DEMO</span>
-    </footer>
-  );
+  return null;
 }
 
 const STYLES = {

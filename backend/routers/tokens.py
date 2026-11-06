@@ -45,9 +45,19 @@ def create_token(request: TokenRequest, user=Depends(current_user)):
             )
 
         cursor = connection.execute(
-            "INSERT INTO tokens (user_id, token, service) VALUES (?, ?, ?)",
-            (user["id"], "PENDING", service),
-        )
+    """
+    INSERT INTO tokens
+    (user_id, customer_name, customer_email, token, service)
+    VALUES (?, ?, ?, ?, ?)
+    """,
+    (
+        user["id"],
+        user["name"],
+        user["email"],
+        "PENDING",
+        service,
+    ),
+)
 
         token_id = cursor.lastrowid
         token_label = f"A{token_id:03}"

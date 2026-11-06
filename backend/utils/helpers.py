@@ -3,7 +3,8 @@ import math
 from datetime import datetime
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from config import (
     COUNTER_CAPACITY,
@@ -18,14 +19,24 @@ from database import connect_db
 # Active user sessions
 sessions = {}
 
+# Standard Bearer authentication for FastAPI Swagger
+bearer_scheme = HTTPBearer(auto_error=False)
+
 
 # Get current authenticated user
-def current_user(authorization: Optional[str] = Header(default=None)):
+def current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        bearer_scheme
+    )
+):
 
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Please sign in")
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Please sign in"
+        )
 
-    session_key = authorization.removeprefix("Bearer ").strip()
+    session_key = credentials.credentials
 
     user = sessions.get(session_key)
 
@@ -42,7 +53,10 @@ def current_user(authorization: Optional[str] = Header(default=None)):
 def require_staff(user=Depends(current_user)):
 
     if user["role"] != "staff":
-        raise HTTPException(status_code=403, detail="Staff access required")
+        raise HTTPException(
+            status_code=403,
+            detail="Staff access required"
+        )
 
     return user
 
@@ -51,7 +65,10 @@ def require_staff(user=Depends(current_user)):
 def check_service(service: str):
 
     if service not in COUNTER_CAPACITY:
-        raise HTTPException(status_code=400, detail="Unknown service area")
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown service area"
+        )
 
 
 # Get counter capacity for a service
@@ -76,7 +93,9 @@ def active_counter_names(connection, service: str):
     rows = connection.execute(
         """
         SELECT counter_name FROM tokens
-        WHERE service = ? AND status = 'called' AND counter_name IS NOT NULL
+        WHERE service = ?
+          AND status = 'called'
+          AND counter_name IS NOT NULL
         """,
         (service,),
     ).fetchall()
@@ -107,7 +126,10 @@ def break_states_for_service(connection, service: str):
     return {
         name: states.get(
             name,
-            {"state": "working", "remaining_customers": 0}
+            {
+                "state": "working",
+                "remaining_customers": 0
+            }
         )
         for name in counter_names_for(service)
     }
@@ -122,12 +144,15 @@ def find_free_counter(connection, service: str):
     candidates = [
         name
         for name in counter_names_for(service)
-        if name not in busy and states[name]["state"] != "on_break"
+        if name not in busy
+        and states[name]["state"] != "on_break"
     ]
 
     # Give priority to counters with pending breaks
     candidates.sort(
-        key=lambda name: 0 if states[name]["state"] == "break_pending" else 1
+        key=lambda name: (
+            0 if states[name]["state"] == "break_pending" else 1
+        )
     )
 
     return candidates[0] if candidates else None
@@ -138,7 +163,9 @@ def estimate_service_minutes(connection, service: str):
 
     row = connection.execute(
         """
-        SELECT AVG((julianday(completed_at) - julianday(called_at)) * 1440.0) AS avg_minutes
+        SELECT AVG(
+            (julianday(completed_at) - julianday(called_at)) * 1440.0
+        ) AS avg_minutes
         FROM tokens
         WHERE service = ?
           AND status = 'completed'
@@ -167,13 +194,20 @@ def token_status_for_customer(connection, token_id: int, user_id: int):
     ).fetchone()
 
     if row is None:
-        raise HTTPException(status_code=404, detail="Token not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Token not found"
+        )
 
     service = row["service"]
 
-    average_minutes = estimate_service_minutes(connection, service)
+    average_minutes = estimate_service_minutes(
+        connection, service
+    )
 
-    states = break_states_for_service(connection, service)
+    states = break_states_for_service(
+        connection, service
+    )
 
     on_break = [
         name
@@ -190,8 +224,11 @@ def token_status_for_customer(connection, token_id: int, user_id: int):
 
         waiting_ahead = connection.execute(
             """
-            SELECT COUNT(*) AS count FROM tokens
-            WHERE service = ? AND status = 'waiting' AND id < ?
+            SELECT COUNT(*) AS count
+            FROM tokens
+            WHERE service = ?
+              AND status = 'waiting'
+              AND id < ?
             """,
             (service, token_id),
         ).fetchone()["count"]
@@ -200,7 +237,8 @@ def token_status_for_customer(connection, token_id: int, user_id: int):
             """
             SELECT COUNT(*) AS count
             FROM tokens
-            WHERE service = ? AND status = 'called'
+            WHERE service = ?
+              AND status = 'called'
             """,
             (service,),
         ).fetchone()["count"]
@@ -208,8 +246,10 @@ def token_status_for_customer(connection, token_id: int, user_id: int):
         people_ahead = waiting_ahead + in_service
 
         wait_minutes = (
-            math.ceil(people_ahead / working_capacity) * average_minutes
-            if working_capacity > 0 else None
+            math.ceil(people_ahead / working_capacity)
+            * average_minutes
+            if working_capacity > 0
+            else None
         )
 
     else:
